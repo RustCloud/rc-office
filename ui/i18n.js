@@ -94,7 +94,7 @@ function h(tag, attrs = {}, ...children) {
     if (name === 'onclick') element.addEventListener('click', value);
     else if (value !== null && value !== undefined && value !== false) element.setAttribute(name, value);
   }
-  for (const child of children.flat()) {
+  for (const child of children.flat(Infinity)) {
     if (child !== null && child !== undefined && child !== false) {
       element.append(child instanceof Node ? child : String(child));
     }
