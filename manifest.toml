@@ -1,8 +1,8 @@
 id = "rc-office"
-version = "0.1.3"
+version = "0.2.0"
 # The version of wit/app.wit: open_with, tokens, locks, request bodies and
-# addresses from settings need 0.2.14.
-api = "^0.2.14"
+# addresses from settings need 0.2.14, [[proxy]] and proxy.self-url 0.2.15.
+api = "^0.2.15"
 # PutFile of a document larger than the plugin takes at once: the server
 # keeps the body on disk and the plugin saves it with write-request-body.
 large_bodies = true
@@ -12,31 +12,37 @@ en = "Office"
 ru = "Офис"
 
 # The plugin is a WOPI host over the user's files: Collabora Online (a
-# container of its own, `office_url`) opens and saves the one file the user
-# opened, with a token for it. Versions, quota, the activity log and the
+# container next to the server, `office_url`) opens and saves the one file the
+# user opened, with a token for it. Versions, quota, the activity log and the
 # trash stay the server's.
 [permissions]
 files = "opened"
 files_write = true
-# Discovery and capabilities of Collabora; the panel shows its editor.
+# Discovery and capabilities of Collabora.
 network = ["{office_url}"]
-frame = ["{office_url}"]
+
+# Browsers reach Collabora only through the server's address: its pages and
+# scripts (/browser) and the document's WebSocket (/cool). So Collabora needs
+# no address, port or TLS of its own.
+[[proxy]]
+target = "{office_url}"
+paths = ["/browser", "/cool"]
 
 [[server_settings]]
 key = "office_url"
 kind = "text"
-label.en = "Collabora Online address"
-label.ru = "Адрес Collabora Online"
-hint.en = "As browsers and this server reach it, e.g. https://office.example.com"
-hint.ru = "Как до него достают браузеры и этот сервер, например https://office.example.com"
+label.en = "Collabora Online address (inside)"
+label.ru = "Адрес Collabora Online (внутренний)"
+hint.en = "As this server reaches it, e.g. http://collabora:9980. Browsers reach Collabora through the cloud's address"
+hint.ru = "Как до неё достаёт сервер облака, например http://collabora:9980. Браузеры ходят к Collabora через адрес облака"
 
 [[server_settings]]
 key = "wopi_base_url"
 kind = "text"
-label.en = "Address of THIS cloud for Collabora (WOPI), if not the panel's"
-label.ru = "Адрес ЭТОГО облака для Collabora (WOPI), если не адрес панели"
-hint.en = "Not the address of Collabora! How Collabora reaches the cloud, e.g. http://rustcloud:8080; Collabora's aliasgroup1 must be the same. Empty: the address of the panel"
-hint.ru = "Не адрес Collabora! Как Collabora достаёт облако, например http://rustcloud:8080; aliasgroup1 Collabora — такой же. Пусто — адрес панели"
+label.en = "Address of THIS cloud for Collabora (usually empty)"
+label.ru = "Адрес ЭТОГО облака для Collabora (обычно пусто)"
+hint.en = "Empty: the server finds it itself. Only if Collabora reaches the cloud at another address, e.g. http://rustcloud:8080. Not the address of Collabora!"
+hint.ru = "Пусто — сервер определяет сам. Только если Collabora достаёт облако по другому адресу, например http://rustcloud:8080. Не адрес Collabora!"
 
 [[open_with]]
 mime = [

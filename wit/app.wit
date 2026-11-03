@@ -3,7 +3,7 @@
 // The server instantiates the app for each request to its routes
 // (`/app/<id>/...`) and calls `handle`. The app reaches the server only
 // through the interfaces it imports here; everything else is denied.
-package rustcloud:app@0.2.14;
+package rustcloud:app@0.2.15;
 
 interface types {
     /// An HTTP request to the app's routes.
@@ -815,6 +815,18 @@ interface use-onnx {
     audio-tensor: func(source: source, options: audio-options) -> result<tensor, error>;
 }
 
+/// The service of the app's `[[proxy]]` (since 0.2.15): an editor the
+/// browser reaches through this server's address, and that calls the app
+/// back itself (WOPI).
+interface proxy {
+    /// How the service reaches this server: `http://172.19.0.3:8080`, the
+    /// server's own address on its connection to the service. The app builds
+    /// the addresses the service calls back from it. None without a proxy,
+    /// while the service doesn't answer, or when the server can't tell (it
+    /// listens on another address).
+    self-url: func() -> option<string>;
+}
+
 world app {
     use types.{request, response, user};
 
@@ -831,6 +843,7 @@ world app {
     import jobs;
     import use-ffmpeg;
     import use-onnx;
+    import proxy;
 
     /// Handles a request to the app's routes. `user` is none for requests
     /// without a session.
@@ -855,6 +868,7 @@ world app-with-jobs {
     import jobs;
     import use-ffmpeg;
     import use-onnx;
+    import proxy;
 
     export handle: func(user: option<user>, request: request) -> response;
 

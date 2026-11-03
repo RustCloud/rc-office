@@ -1,5 +1,8 @@
 # Задача для ядра: прокси сервиса плагина (Collabora через порт облака)
 
+> **Сделано** в ядре коммитом `f957fb4` (API 0.2.15, раздел «Сервис через адрес облака» в
+> `docs/dev/plugins.md`); rc-office 0.2.0 перешёл на него. Ниже — исходная постановка задачи.
+
 Кто просит: плагин [rc-office](https://github.com/RustCloud/rc-office) («Офис», Collabora Online по WOPI).
 Ядро: `/home/user/projects/rustcloud`, API плагинов сейчас 0.2.14 (коммит `e9588eb`).
 

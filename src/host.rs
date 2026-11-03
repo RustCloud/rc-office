@@ -1,7 +1,7 @@
 //! [`Backend`] over the server's imports.
 
 use crate::backend::{self, Backend, Fetched, File, FileError, Lock, LockError, Scope, Token, TokenError};
-use crate::rustcloud::app::{appdata, files, http, log, settings, storage, tokens};
+use crate::rustcloud::app::{appdata, files, http, log, proxy, settings, storage, tokens};
 
 pub struct Host;
 
@@ -116,6 +116,10 @@ impl Backend for Host {
 
     fn settings(&self) -> serde_json::Value {
         serde_json::from_str(&settings::values()).unwrap_or_default()
+    }
+
+    fn self_url(&self) -> Option<String> {
+        proxy::self_url()
     }
 
     fn now_ms(&self) -> i64 {

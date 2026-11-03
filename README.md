@@ -24,53 +24,46 @@ WOPI-клиент в отдельном контейнере, плагин — W
 
 ## Установка
 
-1. Запустите Collabora Online (CODE) рядом с облаком, например в том же `compose.yml`:
+1. Запустите Collabora Online (CODE) рядом с облаком — в том же `compose.yml`, без своего порта
+   наружу и без адресов:
 
    ```yaml
    services:
      collabora:
        image: collabora/code:latest
-       ports:
-         - "9980:9980"
        environment:
-         # Адрес облака, с которого Collabora принимает документы (WOPISrc): точно как его видит
-         # Collabora, со схемой и портом. Несколько — aliasgroup2, aliasgroup3…
-         aliasgroup1: "https://cloud.example.com:443"
-         # За HTTPS-прокси: TLS снимает прокси, Collabora — без TLS.
-         extra_params: "--o:ssl.enable=false --o:ssl.termination=true"
+         # Облако — HTTP внутри сети; TLS, если есть, снимает облако или прокси перед ним.
+         extra_params: "--o:ssl.enable=false"
        cap_add:
          - MKNOD
        restart: unless-stopped
    ```
 
+   Браузеры ходят к Collabora только через адрес облака: ядро пересылает `/browser` и `/cool`
+   (вместе с WebSocket) в контейнер (`[[proxy]]`, API 0.2.15). `aliasgroup1` не нужен: по умолчанию
+   Collabora доверяет первому облаку, которое к ней обратилось после запуска. Если облако снаружи по
+   HTTPS, добавьте `--o:ssl.termination=true`, чтобы Collabora строила адреса `https://`/`wss://`.
    Образ ~1,8 ГБ, без открытых документов Collabora занимает около 770 МБ памяти.
-   Без прокси и без HTTPS (стенд в локальной сети) — `--o:ssl.enable=false` без `ssl.termination`.
 
 2. Установите `rc-office.zip` в «Администрирование → Плагины» (архив — в
    [релизах](https://github.com/RustCloud/rc-office/releases) или артефакт сборки Actions) и включите
-   плагин: это подтверждает доступ к открытому файлу и адрес Collabora в `network` и `frame`.
+   плагин. Он просит доступ к открытому файлу, адрес Collabora в `network` и **сервис через адрес
+   облака**: Collabora работает на адресе облака, поэтому её страницы действуют от имени пользователя,
+   у которого открыт документ, — ставьте только Collabora, которой доверяете.
 
 3. Заполните настройки плагина там же:
 
    | Настройка        | Что это                                                                   |
    |------------------|---------------------------------------------------------------------------|
-   | `office_url`     | адрес Collabora, по которому до неё достают **и браузеры, и сервер облака**: `https://office.example.com` |
-   | `wopi_base_url`  | адрес облака для Collabora, если он не совпадает с адресом панели — например, в compose-сети: `http://rustcloud:8080`. Пусто — адрес панели (`context.origin`) |
+   | `office_url`     | внутренний адрес Collabora, как до неё достаёт сервер облака: `http://collabora:9980` |
+   | `wopi_base_url`  | обычно пусто: адрес облака для Collabora сервер определяет сам (`proxy.self-url`). Нужен, только если Collabora ходит к облаку по другому адресу |
 
-   С `wopi_base_url` (или адресом панели) должен совпадать `aliasgroup1` Collabora — иначе она
-   откажется открывать документы («Unauthorized WOPI host»).
+4. Страница «Офис» в панели показывает, отвечает ли Collabora, её версию, форматы, которые она
+   редактирует, и адрес, по которому она зовёт облако.
 
-4. Страница «Офис» в панели показывает, отвечает ли Collabora, её версию и форматы, которые она
-   редактирует.
-
-**HTTPS со своим ЦС.** Если облако за HTTPS с сертификатом своего ЦС, Collabora нужен этот ЦС внутри
-контейнера (иначе она не достучится до WOPI): смонтируйте его в
-`/usr/local/share/ca-certificates/` и пересоберите доверенные сертификаты при запуске, либо дайте
-Collabora адрес облака по HTTP внутри сети через `wopi_base_url`.
-
-**Встраивание.** Панель показывает редактор во фрейме, поэтому Collabora должна разрешать встраивание
-в страницы облака: по умолчанию она разрешает хосты из `aliasgroup1`; если адрес панели другой —
-`--o:net.frame_ancestors=https://cloud.example.com`.
+**Если Collabora всё же пишет «Unauthorized WOPI host»** — она запомнила другой адрес облака (например,
+контейнер облака пересоздали с новым IP): перезапустите Collabora или задайте ей `aliasgroup1` равным
+адресу облака со страницы «Офис».
 
 ## Как устроен
 
@@ -87,8 +80,9 @@ Collabora адрес облака по HTTP внутри сети через `wo
 «Редактировать в Офисе» → панель: доступ session к файлу, #/app/rc-office/edit?file=<id>
 страница /edit ── /session (через мост) ──▶ плагин: discovery (кэш), urlsrc по расширению,
                                              tokens.issue(file, write, 10 ч), origin панели → AppData
-rustcloud.openFrame(url, { access_token, access_token_ttl }) → панель показывает Collabora поверх страницы
-Collabora ── ?access_token=… ──▶ /app/rc-office/wopi/files/<id>[/contents]
+rustcloud.openFrame(<адрес облака>/browser/…, { access_token, access_token_ttl }) → панель показывает
+    Collabora поверх страницы; ядро пересылает /browser, /cool (WebSocket) в контейнер Collabora
+Collabora ── proxy.self-url + ?access_token=… ──▶ /app/rc-office/wopi/files/<id>[/contents]
 ```
 
 - **Токен** — на один файл, на 10 часов (у ядра до 12): после этого Collabora попросит перезагрузить

@@ -167,10 +167,11 @@ impl Discovery {
 }
 
 /// The editor's address for a document: `urlsrc` with its placeholders
-/// (`<ui=UI_LLCC&>`) dropped, on the origin of `office_url` (browsers reach
-/// Collabora there, and the panel lets frames only there), with `WOPISrc`
-/// and the user's language and theme.
-pub fn editor_url(urlsrc: &str, office_url: &str, wopi_src: &str, lang: &str, dark: bool) -> String {
+/// (`<ui=UI_LLCC&>`) dropped, on `public_origin` — the panel's: browsers
+/// reach Collabora only through the server's address (`[[proxy]]`), while
+/// discovery names its inner one — with `WOPISrc` and the user's language
+/// and theme.
+pub fn editor_url(urlsrc: &str, public_origin: &str, wopi_src: &str, lang: &str, dark: bool) -> String {
     let mut url = String::with_capacity(urlsrc.len());
     let mut placeholder = false;
     for c in urlsrc.chars() {
@@ -181,7 +182,7 @@ pub fn editor_url(urlsrc: &str, office_url: &str, wopi_src: &str, lang: &str, da
             _ => {}
         }
     }
-    if let (Some(from), Some(to)) = (web::origin(&url), web::origin(office_url)) {
+    if let (Some(from), Some(to)) = (web::origin(&url), web::origin(public_origin)) {
         url = format!("{to}{}", &url[from.len()..]);
     }
     if !url.contains('?') {

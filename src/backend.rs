@@ -140,6 +140,9 @@ pub trait Backend {
     fn fetch(&self, url: &str) -> Result<Fetched, String>;
     /// The server settings of the plugin, a JSON object.
     fn settings(&self) -> serde_json::Value;
+    /// How Collabora (the service of `[[proxy]]`) reaches this server:
+    /// `http://172.19.0.3:8080`; none when the server can't tell.
+    fn self_url(&self) -> Option<String>;
     /// Milliseconds since 1970.
     fn now_ms(&self) -> i64;
     fn warn(&self, message: &str);
@@ -168,6 +171,7 @@ pub mod fake {
         pub web: RefCell<HashMap<String, Result<Fetched, String>>>,
         pub fetches: RefCell<Vec<String>>,
         pub settings: serde_json::Value,
+        pub self_url: Option<String>,
         pub now_ms: i64,
         /// Changes made to a file behind the plugin's back before `write_body` runs.
         pub race: RefCell<bool>,
@@ -200,6 +204,7 @@ pub mod fake {
                 web: RefCell::default(),
                 fetches: RefCell::default(),
                 settings: serde_json::json!({ "office_url": "http://office.test:9980" }),
+                self_url: Some("http://172.19.0.3:8080".into()),
                 now_ms: 1_793_000_000_000,
                 race: RefCell::new(false),
                 writable: true,
@@ -352,6 +357,10 @@ pub mod fake {
 
         fn settings(&self) -> serde_json::Value {
             self.settings.clone()
+        }
+
+        fn self_url(&self) -> Option<String> {
+            self.self_url.clone()
         }
 
         fn now_ms(&self) -> i64 {

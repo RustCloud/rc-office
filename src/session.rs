@@ -14,9 +14,11 @@ pub const TOKEN_SECONDS: u32 = 10 * 3600;
 /// The plugin's server settings.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
-    /// Collabora, as browsers and the server reach it.
+    /// Collabora as the server reaches it (`http://collabora:9980`); browsers
+    /// reach it through the server's address (`[[proxy]]`).
     pub office_url: Option<String>,
-    /// The cloud as Collabora reaches it, if not at the panel's address.
+    /// The cloud as Collabora reaches it, if the server can't tell itself
+    /// (`proxy.self-url`).
     pub wopi_base_url: Option<String>,
 }
 
@@ -55,7 +57,7 @@ pub fn open(backend: &dyn Backend, request: &Request) -> Reply {
         return web::error(400, "bad-request", "No origin of the panel");
     }
     let settings = Settings::of(backend);
-    let Some(office_url) = settings.office_url else {
+    let Some(office_url) = settings.office_url.clone() else {
         return web::error(503, "no-office-url", "The administrator has not set the address of Collabora Online");
     };
     let file = match backend.file(&id) {
@@ -94,14 +96,14 @@ pub fn open(backend: &dyn Backend, request: &Request) -> Reply {
     if let Err(why) = backend.appdata_write(&session_path(&id), session.to_string().as_bytes()) {
         backend.warn(&format!("session not kept: {why}"));
     }
-    let base = settings.wopi_base_url.unwrap_or(origin);
+    let base = wopi_base(backend, &settings, &origin);
     let wopi_src = format!("{base}/app/{APP_ID}/wopi/files/{id}");
     let lang = match web::query_param(query, "lang").as_str() {
         "" => String::new(),
         lang => lang.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').take(16).collect(),
     };
     let dark = web::query_param(query, "theme") == "dark";
-    let url = discovery::editor_url(&action.urlsrc, &office_url, &wopi_src, &lang, dark);
+    let url = discovery::editor_url(&action.urlsrc, &origin, &wopi_src, &lang, dark);
     web::json(
         200,
         json!({
@@ -115,6 +117,17 @@ pub fn open(backend: &dyn Backend, request: &Request) -> Reply {
             "locked_by": locked_by,
         }),
     )
+}
+
+/// Where Collabora calls the plugin back (WOPI): the setting if the
+/// administrator gave one, else the server's own address on its connection to
+/// Collabora, else the panel's.
+fn wopi_base(backend: &dyn Backend, settings: &Settings, origin: &str) -> String {
+    settings
+        .wopi_base_url
+        .clone()
+        .or_else(|| web::base_url(backend.self_url().as_deref()))
+        .unwrap_or_else(|| origin.to_owned())
 }
 
 /// `GET /status`: whether Collabora is set and answers, its version and what it edits.
@@ -143,6 +156,8 @@ pub fn status(backend: &dyn Backend) -> Reply {
             status["error"] = json!(err.to_string());
         }
     }
+    // After discovery: the server learns its address on a connection to Collabora.
+    status["self_url"] = json!(web::base_url(backend.self_url().as_deref()));
     if let Ok(answer) = backend.fetch(&format!("{office_url}/hosting/capabilities")) {
         if let Ok(capabilities) = serde_json::from_slice::<serde_json::Value>(&answer.body) {
             status["product"] = capabilities["productName"].clone();
@@ -193,7 +208,8 @@ mod tests {
         assert_eq!(
             body["url"],
             format!(
-                "http://office.test:9980/browser/0c4e5b1/cool.html?WOPISrc=https%3A%2F%2Fcloud.example.com\
+                // Through the panel's address; Collabora calls back the server's inner one.
+                "https://cloud.example.com/browser/0c4e5b1/cool.html?WOPISrc=http%3A%2F%2F172.19.0.3%3A8080\
                  %2Fapp%2Frc-office%2Fwopi%2Ffiles%2F{FILE}&lang=ru&ui_theme=dark"
             )
         );
@@ -211,6 +227,21 @@ mod tests {
         assert!(body["url"].as_str().unwrap().contains("WOPISrc=http%3A%2F%2Frustcloud%3A8080%2Fapp%2Frc-office"));
         // Collabora still talks to the panel.
         assert_eq!(origin_of(&fake, FILE).as_deref(), Some("https://cloud.example.com"));
+    }
+
+    #[test]
+    fn wopi_base_without_self_url() {
+        let fake = Fake { self_url: None, ..fake() };
+        let (_, body) = open_with(&fake, &query());
+        assert!(body["url"].as_str().unwrap().contains("WOPISrc=https%3A%2F%2Fcloud.example.com%2Fapp%2Frc-office"));
+    }
+
+    #[test]
+    fn status_tells_self_url() {
+        let fake = fake();
+        let body: serde_json::Value = serde_json::from_slice(&status(&fake).body).unwrap();
+        assert_eq!(body["self_url"], "http://172.19.0.3:8080");
+        assert_eq!(body["reachable"], true);
     }
 
     #[test]

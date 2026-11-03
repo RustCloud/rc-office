@@ -28,7 +28,11 @@
       [t.address, h('code', {}, status.office_url ?? '')],
       [
         t.wopiBase,
-        status.wopi_base_url ? h('code', {}, status.wopi_base_url) : h('span', { class: 'muted' }, t.wopiBaseDefault),
+        status.wopi_base_url
+          ? [h('code', {}, status.wopi_base_url), ' ', h('span', { class: 'muted' }, t.wopiBaseSet)]
+          : status.self_url
+            ? [h('code', {}, status.self_url), ' ', h('span', { class: 'muted' }, t.wopiBaseAuto)]
+            : h('span', { class: 'muted' }, t.wopiBaseDefault),
         status.wopi_base_is_office ? h('div', { class: 'warn' }, t.wopiBaseIsOffice) : null,
       ],
       [
