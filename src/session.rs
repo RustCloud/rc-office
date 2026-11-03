@@ -128,6 +128,11 @@ pub fn status(backend: &dyn Backend) -> Reply {
         "office_url": office_url,
         "wopi_base_url": settings.wopi_base_url,
     });
+    // A common slip: the address of Collabora itself instead of the cloud's.
+    let office_origin = web::origin(&office_url);
+    if settings.wopi_base_url.as_deref().and_then(web::origin).is_some_and(|base| Some(base) == office_origin) {
+        status["wopi_base_is_office"] = json!(true);
+    }
     match discovery::get(backend, &office_url, true) {
         Ok(discovery) => {
             status["reachable"] = json!(true);
@@ -206,6 +211,17 @@ mod tests {
         assert!(body["url"].as_str().unwrap().contains("WOPISrc=http%3A%2F%2Frustcloud%3A8080%2Fapp%2Frc-office"));
         // Collabora still talks to the panel.
         assert_eq!(origin_of(&fake, FILE).as_deref(), Some("https://cloud.example.com"));
+    }
+
+    #[test]
+    fn warns_when_wopi_base_is_collabora() {
+        let mut fake = fake();
+        fake.settings = json!({ "office_url": "http://office.test:9980/", "wopi_base_url": "http://OFFICE.test:9980" });
+        let body: serde_json::Value = serde_json::from_slice(&status(&fake).body).unwrap();
+        assert_eq!(body["wopi_base_is_office"], true);
+        fake.settings = json!({ "office_url": "http://office.test:9980/", "wopi_base_url": "http://rustcloud:8080" });
+        let body: serde_json::Value = serde_json::from_slice(&status(&fake).body).unwrap();
+        assert!(body.get("wopi_base_is_office").is_none());
     }
 
     #[test]

@@ -8,6 +8,8 @@ const TEXTS = {
     checking: 'Checking…',
     address: 'Address',
     wopiBase: 'Cloud address for Collabora',
+    wopiBaseIsOffice:
+      'This is the address of Collabora itself, but it must be the address of this cloud as Collabora reaches it (e.g. http://rustcloud:8080), the same as aliasgroup1 of Collabora. Leave it empty to use the address of the panel. Otherwise Collabora answers “Unauthorized WOPI host”.',
     wopiBaseDefault: 'the address of the panel',
     state: 'State',
     reachable: 'answers',
@@ -48,6 +50,8 @@ const TEXTS = {
     checking: 'Проверяем…',
     address: 'Адрес',
     wopiBase: 'Адрес облака для Collabora',
+    wopiBaseIsOffice:
+      'Это адрес самой Collabora, а нужен адрес этого облака, как до него достаёт Collabora (например, http://rustcloud:8080), — тот же, что в aliasgroup1 Collabora. Пусто — адрес панели. Иначе Collabora ответит «Unauthorized WOPI host».',
     wopiBaseDefault: 'адрес панели',
     state: 'Состояние',
     reachable: 'отвечает',

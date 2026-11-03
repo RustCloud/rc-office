@@ -26,7 +26,11 @@
     }
     const rows = [
       [t.address, h('code', {}, status.office_url ?? '')],
-      [t.wopiBase, status.wopi_base_url ? h('code', {}, status.wopi_base_url) : h('span', { class: 'muted' }, t.wopiBaseDefault)],
+      [
+        t.wopiBase,
+        status.wopi_base_url ? h('code', {}, status.wopi_base_url) : h('span', { class: 'muted' }, t.wopiBaseDefault),
+        status.wopi_base_is_office ? h('div', { class: 'warn' }, t.wopiBaseIsOffice) : null,
+      ],
       [
         t.state,
         status.reachable
@@ -40,7 +44,7 @@
     }
     statusCard.replaceChildren(
       h('h2', {}, t.status),
-      h('dl', {}, rows.map(([name, value]) => [h('dt', {}, name), h('dd', {}, value)])),
+      h('dl', {}, rows.map(([name, ...value]) => [h('dt', {}, name), h('dd', {}, value)])),
       h('div', { style: 'margin-top: 16px' }, recheck),
     );
   }

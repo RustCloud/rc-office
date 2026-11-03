@@ -1,5 +1,5 @@
 id = "rc-office"
-version = "0.1.2"
+version = "0.1.3"
 # The version of wit/app.wit: open_with, tokens, locks, request bodies and
 # addresses from settings need 0.2.14.
 api = "^0.2.14"
@@ -33,10 +33,10 @@ hint.ru = "Как до него достают браузеры и этот се
 [[server_settings]]
 key = "wopi_base_url"
 kind = "text"
-label.en = "Cloud address for Collabora (if not the public one)"
-label.ru = "Адрес облака для Collabora (если не публичный)"
-hint.en = "Empty: the address of the panel. Collabora's aliasgroup1 must match it, e.g. http://rustcloud:8080"
-hint.ru = "Пусто — адрес панели. С ним должен совпадать aliasgroup1 Collabora, например http://rustcloud:8080"
+label.en = "Address of THIS cloud for Collabora (WOPI), if not the panel's"
+label.ru = "Адрес ЭТОГО облака для Collabora (WOPI), если не адрес панели"
+hint.en = "Not the address of Collabora! How Collabora reaches the cloud, e.g. http://rustcloud:8080; Collabora's aliasgroup1 must be the same. Empty: the address of the panel"
+hint.ru = "Не адрес Collabora! Как Collabora достаёт облако, например http://rustcloud:8080; aliasgroup1 Collabora — такой же. Пусто — адрес панели"
 
 [[open_with]]
 mime = [
