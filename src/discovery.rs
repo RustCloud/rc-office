@@ -170,8 +170,8 @@ impl Discovery {
 /// (`<ui=UI_LLCC&>`) dropped, on `public_origin` — the panel's: browsers
 /// reach Collabora only through the server's address (`[[proxy]]`), while
 /// discovery names its inner one — with `WOPISrc`, the close button and the
-/// user's language and theme.
-pub fn editor_url(urlsrc: &str, public_origin: &str, wopi_src: &str, lang: &str, dark: bool) -> String {
+/// user's language. The look goes in the form fields, see `session::fields`.
+pub fn editor_url(urlsrc: &str, public_origin: &str, wopi_src: &str, lang: &str) -> String {
     let mut url = String::with_capacity(urlsrc.len());
     let mut placeholder = false;
     for c in urlsrc.chars() {
@@ -195,9 +195,6 @@ pub fn editor_url(urlsrc: &str, public_origin: &str, wopi_src: &str, lang: &str,
     url.push_str("&closebutton=1");
     if !lang.is_empty() {
         url.push_str(&format!("&lang={}", web::encode(lang)));
-    }
-    if dark {
-        url.push_str("&ui_theme=dark");
     }
     url
 }
@@ -253,14 +250,13 @@ mod tests {
             "https://office.example.com",
             "https://cloud.example.com/app/rc-office/wopi/files/f1",
             "ru",
-            true,
         );
         assert_eq!(
             url,
             "https://office.example.com/browser/abc/cool.html?\
-             WOPISrc=https%3A%2F%2Fcloud.example.com%2Fapp%2Frc-office%2Fwopi%2Ffiles%2Ff1&closebutton=1&lang=ru&ui_theme=dark"
+             WOPISrc=https%3A%2F%2Fcloud.example.com%2Fapp%2Frc-office%2Fwopi%2Ffiles%2Ff1&closebutton=1&lang=ru"
         );
-        let plain = editor_url("http://o:1/x?a=1", "http://o:1", "w", "", false);
+        let plain = editor_url("http://o:1/x?a=1", "http://o:1", "w", "");
         assert_eq!(plain, "http://o:1/x?a=1&WOPISrc=w&closebutton=1");
     }
 

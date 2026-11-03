@@ -20,6 +20,10 @@ pub struct Settings {
     /// The cloud as Collabora reaches it, if the server can't tell itself
     /// (`proxy.self-url`).
     pub wopi_base_url: Option<String>,
+    /// The classic toolbar instead of tabs (the notebookbar).
+    pub compact_ui: bool,
+    /// A theme of Collabora's own (`theme` field), e.g. `nextcloud`.
+    pub theme: Option<String>,
 }
 
 impl Settings {
@@ -28,6 +32,16 @@ impl Settings {
         Settings {
             office_url: web::base_url(values["office_url"].as_str()),
             wopi_base_url: web::base_url(values["wopi_base_url"].as_str()),
+            compact_ui: values["compact_ui"].as_bool().unwrap_or(false),
+            theme: values["theme"]
+                .as_str()
+                .map(str::trim)
+                .filter(|name| {
+                    !name.is_empty()
+                        && name.len() <= 32
+                        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+                })
+                .map(str::to_owned),
         }
     }
 }
@@ -103,7 +117,7 @@ pub fn open(backend: &dyn Backend, request: &Request) -> Reply {
         lang => lang.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').take(16).collect(),
     };
     let dark = web::query_param(query, "theme") == "dark";
-    let url = discovery::editor_url(&action.urlsrc, &origin, &wopi_src, &lang, dark);
+    let url = discovery::editor_url(&action.urlsrc, &origin, &wopi_src, &lang);
     web::json(
         200,
         json!({
@@ -115,8 +129,24 @@ pub fn open(backend: &dyn Backend, request: &Request) -> Reply {
             "action": action.name,
             "name": file.name,
             "locked_by": locked_by,
+            "fields": fields(&settings, dark),
         }),
     )
+}
+
+/// What the page posts to Collabora with the token: how the editor looks.
+/// The page adds `css_variables`, the panel's colours.
+fn fields(settings: &Settings, dark: bool) -> serde_json::Value {
+    let mode = if settings.compact_ui { "compact" } else { "tabbed" };
+    let mut fields = json!({
+        // The user's own choices in Collabora's settings win (SavedUIState).
+        "ui_defaults": format!("UIMode={mode};SavedUIState=true"),
+        "ui_theme": if dark { "dark" } else { "light" },
+    });
+    if let Some(theme) = &settings.theme {
+        fields["theme"] = json!(theme);
+    }
+    fields
 }
 
 /// Where Collabora calls the plugin back (WOPI): the setting if the
@@ -210,7 +240,7 @@ mod tests {
             format!(
                 // Through the panel's address; Collabora calls back the server's inner one.
                 "https://cloud.example.com/browser/0c4e5b1/cool.html?WOPISrc=http%3A%2F%2F172.19.0.3%3A8080\
-                 %2Fapp%2Frc-office%2Fwopi%2Ffiles%2F{FILE}&closebutton=1&lang=ru&ui_theme=dark"
+                 %2Fapp%2Frc-office%2Fwopi%2Ffiles%2F{FILE}&closebutton=1&lang=ru"
             )
         );
         assert_eq!(body["token"], format!("token-{FILE}-true-36000"));
@@ -227,6 +257,23 @@ mod tests {
         assert!(body["url"].as_str().unwrap().contains("WOPISrc=http%3A%2F%2Frustcloud%3A8080%2Fapp%2Frc-office"));
         // Collabora still talks to the panel.
         assert_eq!(origin_of(&fake, FILE).as_deref(), Some("https://cloud.example.com"));
+    }
+
+    #[test]
+    fn fields_of_the_look() {
+        let fake = fake();
+        let (_, body) = open_with(&fake, &query());
+        assert_eq!(body["fields"], json!({ "ui_defaults": "UIMode=tabbed;SavedUIState=true", "ui_theme": "dark" }));
+        let mut fake = fake;
+        fake.settings = json!({ "office_url": "http://office.test:9980", "compact_ui": true, "theme": " nextcloud " });
+        let (_, body) = open_with(&fake, &query().replace("theme=dark", "theme=light"));
+        assert_eq!(
+            body["fields"],
+            json!({ "ui_defaults": "UIMode=compact;SavedUIState=true", "ui_theme": "light", "theme": "nextcloud" })
+        );
+        fake.settings = json!({ "office_url": "http://office.test:9980", "theme": "../x" });
+        let (_, body) = open_with(&fake, &query());
+        assert!(body["fields"].get("theme").is_none());
     }
 
     #[test]

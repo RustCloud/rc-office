@@ -1,5 +1,5 @@
 id = "rc-office"
-version = "0.2.1"
+version = "0.2.2"
 # The version of wit/app.wit: open_with, tokens, locks, request bodies and
 # addresses from settings need 0.2.14, [[proxy]] and proxy.self-url 0.2.15.
 api = "^0.2.15"
@@ -43,6 +43,22 @@ label.en = "Address of THIS cloud for Collabora (usually empty)"
 label.ru = "Адрес ЭТОГО облака для Collabora (обычно пусто)"
 hint.en = "Empty: the server finds it itself. Only if Collabora reaches the cloud at another address, e.g. http://rustcloud:8080. Not the address of Collabora!"
 hint.ru = "Пусто — сервер определяет сам. Только если Collabora достаёт облако по другому адресу, например http://rustcloud:8080. Не адрес Collabora!"
+
+[[server_settings]]
+key = "compact_ui"
+kind = "bool"
+label.en = "Compact toolbar instead of tabs"
+label.ru = "Компактная панель инструментов вместо вкладок"
+hint.en = "Users can change it in Collabora's own settings"
+hint.ru = "Пользователь может поменять это в настройках самой Collabora"
+
+[[server_settings]]
+key = "theme"
+kind = "text"
+label.en = "Collabora theme"
+label.ru = "Тема Collabora"
+hint.en = "A theme built into Collabora, e.g. nextcloud (flat icons, rounded). Empty: the standard one"
+hint.ru = "Тема, встроенная в Collabora, например nextcloud (плоские значки, скругления). Пусто — стандартная"
 
 [[open_with]]
 mime = [

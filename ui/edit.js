@@ -18,6 +18,28 @@
     return id ? { id, name: '', write: true } : null;
   })();
 
+  /**
+   * The panel's colours for Collabora (`css_variables`: `--co-name=value;…`),
+   * from this page's tokens, which follow the panel's theme.
+   */
+  function cssVariables() {
+    const style = getComputedStyle(document.documentElement);
+    const token = (name) => style.getPropertyValue(name).trim();
+    const variables = {
+      '--co-primary-element': token('--accent'),
+      '--co-text-accent': token('--accent'),
+      '--co-primary-text': token('--accent-fg'),
+      '--co-primary-light': token('--card'),
+      '--co-primary-element-light': token('--card'),
+      '--co-color-warning': token('--warn'),
+      '--co-border-radius': '8px',
+    };
+    return Object.entries(variables)
+      .filter(([, value]) => value)
+      .map(([name, value]) => `${name}=${value}`)
+      .join(';');
+  }
+
   function screen(...children) {
     app.replaceChildren(h('div', { class: 'box' }, ...children));
   }
@@ -77,7 +99,12 @@
     try {
       await rustcloud.openFrame({
         url: answer.url,
-        fields: { access_token: answer.token, access_token_ttl: String(answer.ttl) },
+        fields: {
+          ...(answer.fields ?? {}),
+          css_variables: cssVariables(),
+          access_token: answer.token,
+          access_token_ttl: String(answer.ttl),
+        },
       });
       frameOpen = true;
     } catch (err) {
