@@ -1,0 +1,103 @@
+name: Build
+
+# Checks the plugin and builds its archive for Administration → Plugins → Install.
+#
+# - every push, pull request and "Run workflow": versions, fmt, clippy, tests,
+#   the pages' JavaScript, the build; the artifact rc-office-<version> downloads
+#   as a zip that installs as it is (manifest.toml and app.wasm at its top);
+# - a tag v<version> (the version of manifest.toml, e.g. v0.1.0) also publishes
+#   a release with rc-office.zip and its SHA-256.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  build:
+    name: Check, build, archive
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy --target wasm32-wasip2
+          rustup default stable
+          rustc --version && cargo --version && node --version
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      # One version everywhere, and the WIT the manifest says it is built against.
+      - name: Versions
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' manifest.toml)
+          crate=$(sed -n '/^\[package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          api=$(sed -n 's/^api = "^\(.*\)"/\1/p' manifest.toml)
+          wit=$(sed -n 's/^package rustcloud:app@\(.*\);/\1/p' wit/app.wit)
+          echo "manifest $version, Cargo.toml $crate, api ^$api, wit/app.wit $wit"
+          [ "$version" = "$crate" ] || { echo "::error::manifest.toml $version ≠ Cargo.toml $crate"; exit 1; }
+          [ "$api" = "$wit" ] || { echo "::error::manifest api ^$api ≠ wit/app.wit $wit"; exit 1; }
+          case "$GITHUB_REF" in
+            refs/tags/v*)
+              [ "${GITHUB_REF#refs/tags/v}" = "$version" ] || {
+                echo "::error::tag ${GITHUB_REF#refs/tags/} ≠ v$version of manifest.toml"; exit 1; } ;;
+          esac
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Format
+        run: cargo fmt -- --check
+
+      - name: Clippy
+        run: |
+          cargo clippy --release --locked --target wasm32-wasip2 -- -D warnings
+          cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --locked
+
+      - name: Pages
+        run: for file in ui/*.js e2e/*.mjs; do [ -e "$file" ] && node --check "$file"; done
+
+      - name: Build
+        run: |
+          cargo build --release --locked --target wasm32-wasip2
+          mkdir -p dist/rc-office
+          cp manifest.toml dist/rc-office/
+          cp target/wasm32-wasip2/release/rc_office.wasm dist/rc-office/app.wasm
+          (cd dist && zip -qr rc-office.zip rc-office && sha256sum rc-office.zip > rc-office.zip.sha256)
+          ls -l dist/rc-office dist/rc-office.zip
+          cat dist/rc-office.zip.sha256
+
+      # The artifact downloads as a zip of the folder's files: manifest.toml and
+      # app.wasm at its top make it the plugin archive itself.
+      - name: Keep the archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-office-${{ env.VERSION }}
+          path: dist/rc-office/
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          gh release view "$tag" >/dev/null 2>&1 ||
+            gh release create "$tag" --title "$tag" --notes "Install rc-office.zip on Administration → Plugins."
+          gh release upload "$tag" dist/rc-office.zip dist/rc-office.zip.sha256 --clobber

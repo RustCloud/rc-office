@@ -1,0 +1,866 @@
+// The contract between RustCloud and a WASM app (plugin).
+//
+// The server instantiates the app for each request to its routes
+// (`/app/<id>/...`) and calls `handle`. The app reaches the server only
+// through the interfaces it imports here; everything else is denied.
+package rustcloud:app@0.2.14;
+
+interface types {
+    /// An HTTP request to the app's routes.
+    record request {
+        method: string,
+        /// Path below `/app/<id>`, starting with `/`.
+        path: string,
+        /// Query string without `?`; empty when there is none.
+        query: string,
+        headers: list<tuple<string, string>>,
+        body: list<u8>,
+    }
+
+    /// The app's answer. With the header `x-rustcloud-send` (since 0.2.10)
+    /// the server sends a file instead of `body`, as a stream with `Range`
+    /// and `ETag`, after checking the user may read it through the app:
+    /// `file:<id>` (a file the user gave the app), `appdata:<path>` (the
+    /// user's AppData of the app) or `storage:<path>` (the app's storage).
+    /// Its size has no limit: the file never passes through the app.
+    record response {
+        status: u16,
+        headers: list<tuple<string, string>>,
+        body: list<u8>,
+    }
+
+    /// The logged-in user a request came from.
+    record user {
+        /// UUID of the account.
+        id: string,
+        username: string,
+        display-name: string,
+    }
+}
+
+/// Messages in the server log, marked with the app's id. Warnings also go to
+/// the activity log.
+interface log {
+    info: func(message: string);
+    warn: func(message: string);
+}
+
+/// The app's own data for the user the request came from: the hidden folder
+/// `.appdata/<app id>/` in the user's files. Paths are relative to it, with
+/// `/` between names. Counts against the user's quota.
+interface appdata {
+    variant error {
+        /// The request has no logged-in user, so there is no AppData.
+        no-user,
+        not-found,
+        /// A name in the path is not allowed: empty, `.`, `..`, or with `\`
+        /// or control characters.
+        invalid-path,
+        /// The user's quota or the upload size limit would be exceeded.
+        no-space,
+        /// The file is larger than the app may read at once (`limits`).
+        too-large,
+        /// A file is in the way where a folder is needed.
+        conflict,
+        other(string),
+    }
+
+    record entry {
+        name: string,
+        is-dir: bool,
+        size: u64,
+        /// Changes whenever the file's content does; `""` for folders.
+        etag: string,
+        /// Last change, RFC 3339 in UTC.
+        updated-at: string,
+    }
+
+    read: func(path: string) -> result<list<u8>, error>;
+    /// Up to `length` bytes from `offset`, at most `data-bytes` (`limits`) at
+    /// once; fewer at the end, none past it (since 0.2.10).
+    read-range: func(path: string, offset: u64, length: u64) -> result<list<u8>, error>;
+    /// Creates or replaces the file, and the folders on the way.
+    write: func(path: string, data: list<u8>) -> result<entry, error>;
+    /// Contents of a folder; `""` is the app's folder itself.
+    %list: func(dir: string) -> result<list<entry>, error>;
+    /// Deletes a file, or a folder with everything inside it.
+    delete: func(path: string) -> result<_, error>;
+}
+
+/// The user's files, as far as the user gave this app access to them (see
+/// `/api/v1/grants`). Anything else is `not-found`, as if it didn't exist.
+/// Changes appear in the activity log with the app's id.
+interface files {
+    variant error {
+        /// The request has no logged-in user.
+        no-user,
+        not-found,
+        /// The app may read this, not change it; or it is the granted
+        /// folder itself, which the app can't delete.
+        read-only,
+        /// Empty, `.`, `..`, or with `/`, `\` or control characters.
+        invalid-name,
+        /// The user's quota or the upload size limit would be exceeded.
+        no-space,
+        /// The file is larger than the app may read at once (`limits`).
+        too-large,
+        /// The name is taken in that folder; for `write-if-match`, the file
+        /// changed since; for any change, another app holds a lock on it.
+        conflict,
+        other(string),
+    }
+
+    record node {
+        /// UUID.
+        id: string,
+        parent-id: option<string>,
+        name: string,
+        is-dir: bool,
+        size: u64,
+        mime-type: option<string>,
+        /// Changes whenever the content changes; none for folders.
+        etag: option<string>,
+        /// RFC 3339.
+        updated-at: string,
+    }
+
+    /// The files and folders the user gave this app access to.
+    granted: func() -> result<list<node>, error>;
+    get: func(id: string) -> result<node, error>;
+    /// Folders first, then files, by name.
+    children: func(folder-id: string) -> result<list<node>, error>;
+    read: func(id: string) -> result<list<u8>, error>;
+    /// Up to `length` bytes from `offset`, at most `data-bytes` (`limits`) at
+    /// once; fewer at the end, none past it (since 0.2.10).
+    read-range: func(id: string, offset: u64, length: u64) -> result<list<u8>, error>;
+    /// Replaces the content of a file.
+    write: func(id: string, data: list<u8>) -> result<node, error>;
+    create-file: func(folder-id: string, name: string, data: list<u8>) -> result<node, error>;
+    create-folder: func(parent-id: string, name: string) -> result<node, error>;
+    /// Deletes a file, or a folder with everything inside it.
+    delete: func(id: string) -> result<_, error>;
+
+    /// Replaces the content of a file only if it still has the ETag
+    /// `if-match`; `conflict` if it changed (since 0.2.14).
+    write-if-match: func(id: string, data: list<u8>, if-match: string) -> result<node, error>;
+
+    /// Replaces the content of a file with the body of the request the app
+    /// is answering, streamed by the server without passing through the app;
+    /// with `if-match`, only if the file still has that ETag. Works for any
+    /// body, and is the only way to save one too large to be given to the app
+    /// (`large-bodies` in the manifest, header `x-rustcloud-body-size`).
+    /// `other` outside a request or without a body (since 0.2.14).
+    write-request-body: func(id: string, if-match: option<string>) -> result<node, error>;
+
+    /// A lock on a file (since 0.2.14). While it lasts, only the app that
+    /// holds it changes or deletes the file; the panel and other apps get
+    /// `conflict`. Renaming and moving still work.
+    record file-lock {
+        /// What the app named it, e.g. a WOPI lock id.
+        lock-id: string,
+        app-id: string,
+        /// The user it was taken for (UUID).
+        user-id: string,
+        /// RFC 3339.
+        expires-at: string,
+    }
+
+    variant lock-error {
+        no-user,
+        not-found,
+        /// The app may only read the file, or it is a folder.
+        read-only,
+        /// Someone else holds another lock on the file: this one.
+        locked(file-lock),
+        other(string),
+    }
+
+    /// Takes the lock `lock-id` on a file for `seconds` (at most an hour),
+    /// or renews it if the app holds it already.
+    lock: func(id: string, lock-id: string, seconds: u32) -> result<file-lock, lock-error>;
+    /// Ends the lock `lock-id`; `locked` if another lock is held, nothing
+    /// if there is none.
+    unlock: func(id: string, lock-id: string) -> result<_, lock-error>;
+    /// The lock held on a file, if any.
+    get-lock: func(id: string) -> result<option<file-lock>, error>;
+
+    /// An earlier content of a file (since 0.2.14).
+    record version {
+        id: string,
+        size: u64,
+        etag: string,
+        /// When this content was written, RFC 3339.
+        modified-at: string,
+        /// When it was replaced, RFC 3339.
+        created-at: string,
+    }
+
+    /// Earlier versions of a file, newest first.
+    versions: func(id: string) -> result<list<version>, error>;
+    /// Up to `length` bytes of a version from `offset`, at most
+    /// `data-bytes` (`limits`) at once.
+    read-version: func(id: string, version-id: string, offset: u64, length: u64) -> result<list<u8>, error>;
+}
+
+/// Folders of their AppData other users shared with the user the request came
+/// from (since 0.2.1). Users share from the panel (`rustcloud.share` in
+/// `app-sdk.js`), never the app by itself. Paths are relative to the shared
+/// folder; changes count against the owner's quota.
+interface shares {
+    use types.{user};
+    use appdata.{entry};
+
+    variant error {
+        /// The request has no logged-in user.
+        no-user,
+        /// No such file, or the share has ended.
+        not-found,
+        /// The folder is shared read-only, or the app password only reads.
+        read-only,
+        /// Empty (where a file is needed), `.`, `..`, or with `\` or control characters.
+        invalid-path,
+        /// The owner's quota or the upload size limit would be exceeded.
+        no-space,
+        /// The file is larger than the app may read at once (`limits`).
+        too-large,
+        /// A file is in the way where a folder is needed.
+        conflict,
+        other(string),
+    }
+
+    record share {
+        /// UUID.
+        id: string,
+        owner: user,
+        /// The shared folder in the owner's AppData of this app.
+        path: string,
+        /// What the folder was called when it was shared.
+        label: string,
+        /// Whether the user may change it, not only read it.
+        write: bool,
+    }
+
+    /// What other users shared with this user in this app, newest first.
+    received: func() -> result<list<share>, error>;
+    read: func(share-id: string, path: string) -> result<list<u8>, error>;
+    /// Creates or replaces the file, and the folders on the way.
+    write: func(share-id: string, path: string, data: list<u8>) -> result<entry, error>;
+    /// Contents of a folder; `""` is the shared folder itself.
+    %list: func(share-id: string, dir: string) -> result<list<entry>, error>;
+    /// Deletes a file, or a folder with everything inside it; not the shared folder itself.
+    delete: func(share-id: string, path: string) -> result<_, error>;
+    /// Gives the share up: the folder is gone for this user, the owner keeps it.
+    leave: func(share-id: string) -> result<_, error>;
+}
+
+/// The app's settings for the whole server, which the administrator fills
+/// in on the Plugins tab; the manifest declares them in `[[server_settings]]`
+/// (since 0.2.2).
+interface settings {
+    /// A JSON object, key → value: `true`, a number, a string or a list of
+    /// strings. Settings never filled in are missing. Secrets (API keys) are
+    /// included: the app needs them, the browser never gets them back.
+    values: func() -> string;
+}
+
+/// What this call of the app may use (since 0.2.9): worked out from the
+/// multiples in the manifest's `[limits]`, which the administrator may
+/// change. A call that moves more than `data-bytes` at once (a file read
+/// whole, an HTTP answer, a thumbnail) gets `too-large` instead.
+interface limits {
+    record limits {
+        /// Memory of this instance.
+        memory-bytes: u64,
+        /// Most data one call moves at once: a quarter of the memory.
+        data-bytes: u64,
+        /// The app's own work; waiting for the server doesn't count.
+        time-ms: u64,
+        /// All of it, waiting for the server included; native tools
+        /// (`use-ffmpeg`, `use-onnx`) don't count.
+        wall-ms: u64,
+    }
+
+    get-limits: func() -> limits;
+}
+
+/// Addresses the app's page may put in `<img src>`, `<video src>` or a
+/// download link (since 0.2.10): the server sends the file itself, with
+/// `Range` (seeking in a video) and `ETag` (the browser's cache), any size.
+/// A link works while the user's session does; access is checked on every
+/// request, so one the user took back, or a file changed or deleted, ends
+/// it. The same file in the same version gets the same link within a
+/// session. Only for requests from a browser session: none for app
+/// passwords or background jobs.
+interface links {
+    variant target {
+        /// A file the user gave the app.
+        file(string),
+        /// A file of the user's AppData of the app.
+        appdata(string),
+        /// A file of the app's storage.
+        storage(string),
+    }
+
+    variant error {
+        /// Not a request from a browser session.
+        no-session,
+        /// No such file, or the app may not read it.
+        not-found,
+        other(string),
+    }
+
+    /// One link per target, in order (at most 1000 at once): a path of
+    /// this server, `/api/v1/app-links/…`.
+    create: func(targets: list<target>) -> list<result<string, error>>;
+
+    /// How a video the browser can't play as it is gets streamed.
+    enum stream-mode {
+        /// Repacked, not re-encoded: H.264 (or HEVC, where the browser
+        /// decodes it) in MKV, AVI, MPEG-TS…
+        copy,
+        /// Re-encoded to H.264, at most 720p: HEVC where the browser has no
+        /// decoder, MPEG-2, VP9 in Safari…
+        h264,
+    }
+
+    /// An HLS playlist of a video (since 0.2.11), `/api/v1/app-links/…/index.m3u8`:
+    /// for hls.js, or a `<video src>` in Safari. The server makes each
+    /// piece of fragmented MP4 when the player asks for it. Needs
+    /// `use.ffmpeg`; otherwise, or for a file that is no video, `other`.
+    video-stream: func(target: target, mode: stream-mode) -> result<string, error>;
+
+    /// A link the app's page uploads one file to (since 0.2.12): it `POST`s
+    /// the file's bytes as the body to `/api/v1/app-links/…` and gets the
+    /// new file as JSON (`201`). The file goes to the server as a stream,
+    /// never through the app: only the user's quota and the server's upload
+    /// limit bound its size. `folder` is a folder the user gave the app to
+    /// change; `name` must be free there unless `overwrite`. A link serves
+    /// one upload, which must start within 15 minutes; a failed upload may
+    /// be tried again. `not-found` for a folder the app can't see, `other`
+    /// when it may only read it or the name is invalid or taken.
+    upload: func(folder: string, name: string, overwrite: bool) -> result<string, error>;
+
+    /// A link the app's page uploads a new content of a file to (since
+    /// 0.2.14), as `upload` does: a stream that never passes through the
+    /// app, kept as a version of the file. With `if-match`, the upload
+    /// fails (`409 FILE_CHANGED`) if the file changed meanwhile. `file` is a
+    /// file the user gave the app to change.
+    replace: func(file: string, if-match: option<string>) -> result<string, error>;
+}
+
+/// Tokens for other servers (since 0.2.14). An editor such as Collabora
+/// Online calls the app's routes back for the file the user opened (WOPI),
+/// without the user's session. The app gives it a token for that one file;
+/// it sends it as `?access_token=…` or `Authorization: Bearer …`, and the
+/// server calls the app as the user, reaching only that file. A token works
+/// until it runs out and while the user's access for the app to the file is
+/// in force; each call keeps a session of an opened file alive.
+interface tokens {
+    variant error {
+        /// No user, or the request itself came with a token.
+        no-user,
+        /// A file the app can't reach.
+        not-found,
+        /// The app may only read the file, and the token was to change it.
+        read-only,
+        other(string),
+    }
+
+    record token {
+        token: string,
+        /// RFC 3339.
+        expires-at: string,
+    }
+
+    /// What the token of this request allows.
+    record scope {
+        file: string,
+        write: bool,
+    }
+
+    /// A token for `file`, to read or also change it, for `seconds` (at
+    /// most 12 hours).
+    issue: func(file: string, write: bool, seconds: u32) -> result<token, error>;
+    /// The scope of the token this request came with; none for a request of
+    /// the user (a session, an app password).
+    current: func() -> option<scope>;
+}
+
+/// HTTP requests to other servers (since 0.2.3): only to the addresses the
+/// manifest lists in `permissions.network`, which the administrator approved
+/// by enabling the app. The server makes the request; redirects are followed
+/// while they stay within those addresses. Time spent waiting doesn't count
+/// against the app's time limit, only against the request's limit in all.
+interface http {
+    record request {
+        method: string,
+        /// `https://host/path?query`; `http://` only where the manifest says so.
+        url: string,
+        /// Without `host`, which comes from the URL.
+        headers: list<tuple<string, string>>,
+        body: list<u8>,
+    }
+
+    record response {
+        status: u16,
+        headers: list<tuple<string, string>>,
+        body: list<u8>,
+    }
+
+    variant error {
+        /// The address is not in the manifest's `permissions.network`, or a
+        /// redirect leads to one that isn't.
+        not-allowed,
+        /// Not a full `http(s)://` URL, or a bad method or header.
+        invalid-request,
+        /// The answer is larger than the app may take at once (`limits`).
+        too-large,
+        /// No answer before the request's time ran out.
+        timeout,
+        /// No connection or no valid answer: DNS, TLS, refused…
+        failed(string),
+    }
+
+    fetch: func(request: request) -> result<response, error>;
+}
+
+/// The app's own storage on the server, one for all its users (since 0.2.4):
+/// models, reference data, caches — nothing about particular people, which
+/// belongs in AppData. Files the manifest lists in `[[downloads]]` are put
+/// here by the server once the app is enabled. Counts against no user's
+/// quota; the administrator sees its size and can clear it. Works also for
+/// requests without a user.
+///
+/// Paths are names separated by `/`, none of them empty, `.` or `..`.
+interface storage {
+    variant error {
+        not-found,
+        /// Not a valid path (see above).
+        invalid-path,
+        other(string),
+    }
+
+    record file {
+        path: string,
+        size: u64,
+        /// SHA-256 of the content, hex.
+        sha256: string,
+        /// Last change, RFC 3339 in UTC.
+        updated-at: string,
+    }
+
+    /// The files in the folder `dir` and below it, by path; `""` for all.
+    %list: func(dir: string) -> result<list<file>, error>;
+    stat: func(path: string) -> result<file, error>;
+    /// Up to `length` bytes from `offset`, at most `data-bytes` (`limits`) at once; fewer at
+    /// the end of the file, none past it. Large files (models) are read in parts.
+    read: func(path: string, offset: u64, length: u64) -> result<list<u8>, error>;
+    /// Creates or replaces a file.
+    write: func(path: string, data: list<u8>) -> result<file, error>;
+    /// Deletes a file, or everything in the folder `path`.
+    delete: func(path: string) -> result<_, error>;
+}
+
+/// Background jobs (since 0.2.5). The app adds them for the user of a
+/// request — one job per thing to do, e.g. per photo — and the server runs
+/// them later, in batches, through the app's `run-batch` export (world
+/// `app-with-jobs`). Kinds and batch sizes are declared in the manifest
+/// (`[[jobs]]`).
+interface jobs {
+    record new-job {
+        /// One of the manifest's `[[jobs]]`.
+        kind: string,
+        /// What to work on, e.g. a file id; at most 512 bytes. Adding a job
+        /// with the kind and key of a waiting one replaces it.
+        key: string,
+        /// Anything the app wants back with the job, at most 4 KiB.
+        data: string,
+    }
+
+    record job {
+        kind: string,
+        key: string,
+        data: string,
+        /// How many times it was tried before.
+        attempts: u32,
+    }
+
+    /// What became of one job of a batch.
+    variant outcome {
+        done,
+        /// It can't be done: kept as failed, with the reason.
+        failed(string),
+        /// Not now (a service is busy): tried again later, five times in all.
+        retry(string),
+    }
+
+    record kind-progress {
+        kind: string,
+        /// Not done yet, running ones included.
+        waiting: u64,
+        failed: u64,
+    }
+
+    variant error {
+        /// The request has no logged-in user.
+        no-user,
+        /// The manifest has no such kind.
+        unknown-kind(string),
+        /// An empty or too long key, too long data, or more than 1000 jobs at once.
+        invalid-job(string),
+        other(string),
+    }
+
+    /// Adds jobs for the user of the request.
+    add: func(jobs: list<new-job>) -> result<_, error>;
+    /// The user's jobs of this app, by kind.
+    progress: func() -> result<list<kind-progress>, error>;
+}
+
+/// ffmpeg, run by the server for the app (since 0.2.7; manifest
+/// `[permissions] use = ["ffmpeg"]`, which the administrator approves as
+/// `use.ffmpeg`). The server's own build, in a sandbox: it gets the file, not
+/// a path, and the app asks for what it wants, never for a command line.
+/// A server without ffmpeg answers `unsupported`; see `capabilities`.
+interface use-ffmpeg {
+    /// Which file: one of the user's (by id, within what the user gave the
+    /// app), a file of the app's AppData, or of its storage.
+    variant source {
+        file(string),
+        appdata(string),
+        storage(string),
+    }
+
+    variant error {
+        /// A user's file or AppData, but the request has no logged-in user.
+        no-user,
+        /// The administrator didn't approve `use.ffmpeg` for this app.
+        not-allowed,
+        not-found,
+        /// No ffmpeg here, or nothing in it for this file.
+        unsupported(string),
+        /// Options out of bounds: a box of 0 or above 8192, quality 0.
+        invalid-options(string),
+        /// All the server's ffmpeg processes are busy: try again later
+        /// (in a job: `retry`).
+        busy,
+        timeout,
+        /// The file is broken or beyond the server's limits: the reason.
+        failed(string),
+    }
+
+    record capabilities {
+        available: bool,
+        /// The version, if it runs.
+        ffmpeg: option<string>,
+        /// Pictures it reads: "jpeg", "png", "webp", "gif", "bmp", "tiff", "heic", "avif".
+        image-formats: list<string>,
+        /// "h264", "hevc", "vp8", "vp9", "av1", "mpeg4", "mpeg2".
+        video-codecs: list<string>,
+        /// "aac", "mp3", "opus", "vorbis", "flac", "alac", "pcm".
+        audio-codecs: list<string>,
+    }
+
+    record video-stream {
+        codec: string,
+        width: u32,
+        height: u32,
+        fps: f32,
+        /// Degrees the picture is turned when shown.
+        rotation: u16,
+        bit-depth: u8,
+        hdr: bool,
+        bitrate: u64,
+    }
+
+    record audio-stream {
+        codec: string,
+        channels: u8,
+        sample-rate: u32,
+        bitrate: u64,
+        language: option<string>,
+    }
+
+    record subtitle-stream {
+        codec: string,
+        language: option<string>,
+        title: option<string>,
+    }
+
+    record location {
+        latitude: f64,
+        longitude: f64,
+        /// Metres above sea level.
+        altitude: option<f64>,
+    }
+
+    record metadata {
+        /// "jpeg", "heif", "avif", "png", "mp4", "mov", "mkv", "webm", "mp3"…
+        container: string,
+        mime-type: string,
+        /// A photo rather than a video or music.
+        still: bool,
+        /// Videos and music.
+        duration-ms: option<u64>,
+        /// As shown: the picture's rotation applied.
+        width: option<u32>,
+        height: option<u32>,
+        video: list<video-stream>,
+        audio: list<audio-stream>,
+        subtitles: list<subtitle-stream>,
+        /// When it was shot (EXIF, QuickTime), RFC 3339; without an offset
+        /// when the camera wrote none.
+        taken-at: option<string>,
+        location: option<location>,
+        camera-make: option<string>,
+        camera-model: option<string>,
+        lens: option<string>,
+        /// Other tags, flat: "exif.ISO" → "200".
+        tags: list<tuple<string, string>>,
+    }
+
+    enum image-format { jpeg, webp, png }
+
+    /// How a picture fills its box.
+    enum fit {
+        /// All of it, within the box.
+        inside,
+        /// The box filled, the rest cropped: square thumbnails.
+        cover,
+    }
+
+    record picture-options {
+        /// 1–8192.
+        max-width: u32,
+        max-height: u32,
+        fit: fit,
+        format: image-format,
+        /// 1–100.
+        quality: u8,
+        /// A video's moment; none: a typical frame past the start.
+        at-ms: option<u64>,
+    }
+
+    /// What ffmpeg can do here.
+    get-capabilities: func() -> capabilities;
+    /// What a file is, and when, where and with what it was shot.
+    get-metadata: func(source: source) -> result<metadata, error>;
+    /// A picture of a file within a box: a photo of any format (HEIC
+    /// included, turned as shown), a frame of a video, an album cover. At
+    /// most `data-bytes` (`limits`); a larger one is `failed`.
+    thumbnail: func(source: source, options: picture-options) -> result<list<u8>, error>;
+}
+
+/// Neural networks in ONNX format, run by the server for the app (since
+/// 0.2.13; manifest `[permissions] use = ["onnx"]`, which the administrator
+/// approves as `use.onnx`). A model is a file of the app's storage, usually
+/// put there by `[[downloads]]`, named by its path. The server loads it into
+/// a confined process of its own at the first call and keeps it loaded
+/// while it is used: it is unloaded `keep-loaded-seconds` after its last run
+/// (see `capabilities`), so a batch over many files loads it once. Runs of
+/// one model wait for each other.
+///
+/// `run` takes and gives any tensors: pictures, sound, text (token ids the
+/// app made), embeddings. `image-tensor` and `audio-tensor` make the usual
+/// inputs from files without the app decoding them.
+interface use-onnx {
+    /// Which file a helper reads: one of the user's (by id, within what the
+    /// user gave the app), a file of the app's AppData, or of its storage.
+    variant source {
+        file(string),
+        appdata(string),
+        storage(string),
+    }
+
+    variant error {
+        /// A user's file or AppData, but the request has no logged-in user.
+        no-user,
+        /// The administrator didn't approve `use.onnx` for this app.
+        not-allowed,
+        /// No such model or file.
+        not-found,
+        /// No engine here, or the file has nothing the helper reads.
+        unsupported(string),
+        /// Tensors that don't fit the model or their own shape, helper
+        /// options out of bounds: the reason.
+        invalid-input(string),
+        /// All the models' processes are running: try again later (in a
+        /// job: `retry`).
+        busy,
+        timeout,
+        /// The model can't be loaded or failed, or a result is larger than
+        /// `data-bytes`: the reason.
+        failed(string),
+    }
+
+    /// Little-endian values, row by row (the last index changes fastest).
+    enum tensor-type { %f32, %f64, %i32, %i64, %i8, %u8, %bool }
+
+    record tensor {
+        dtype: tensor-type,
+        shape: list<u32>,
+        /// The values' bytes: their size times the product of `shape`.
+        /// `bool`: one byte, 0 or 1.
+        data: list<u8>,
+    }
+
+    record named-tensor {
+        /// The model's input or output.
+        name: string,
+        tensor: tensor,
+    }
+
+    /// An input or output as the model declares it.
+    record tensor-info {
+        name: string,
+        /// None: a type apps can't send or get (f16, strings…).
+        dtype: option<tensor-type>,
+        /// None for a dimension the model leaves open (a batch, a length);
+        /// none at all when the model doesn't even say how many there are
+        /// (often for outputs): the first run tells.
+        shape: option<list<option<u32>>>,
+    }
+
+    record model-info {
+        inputs: list<tensor-info>,
+        outputs: list<tensor-info>,
+    }
+
+    record capabilities {
+        available: bool,
+        /// "tract 0.23".
+        engine: option<string>,
+        /// How long a model stays loaded after its last run.
+        keep-loaded-seconds: u32,
+    }
+
+    /// How a picture fills the exact size of an image tensor.
+    enum image-fit {
+        /// Stretched to it.
+        stretch,
+        /// All of it, at the top left, the rest black ("letterbox"): the
+        /// scale is the smaller of width / picture width and height /
+        /// picture height.
+        inside,
+        /// It filled, centred, the rest cropped.
+        cover,
+    }
+
+    /// A part of a picture as shown, in its pixels.
+    record crop {
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+    }
+
+    enum channels { rgb, bgr }
+
+    enum layout {
+        /// `[1, 3, height, width]`: a plane per colour (most models).
+        nchw,
+        /// `[1, height, width, 3]`.
+        nhwc,
+    }
+
+    record image-options {
+        /// 1–4096: the tensor's size.
+        width: u32,
+        height: u32,
+        fit: image-fit,
+        /// A part of the picture (a face found before); none: all of it.
+        crop: option<crop>,
+        channels: channels,
+        layout: layout,
+        /// Each value `v` (0–255) of colour `c` becomes
+        /// `(v - mean[c]) / std[c]`, colours in the order of `channels`:
+        /// `127.5`/`127.5` gives -1…1, `0`/`255` gives 0…1; ImageNet models
+        /// take mean 123.675, 116.28, 103.53 and std 58.395, 57.12, 57.375.
+        mean: tuple<f32, f32, f32>,
+        std: tuple<f32, f32, f32>,
+    }
+
+    /// A picture made a model's input.
+    record image-input {
+        /// f32, `[1, 3, height, width]` or `[1, height, width, 3]`.
+        tensor: tensor,
+        /// The picture's size as shown (turned as the camera was held),
+        /// before the crop: to map what the model found back onto it.
+        width: u32,
+        height: u32,
+    }
+
+    record audio-options {
+        /// Samples per second, 8000–48000: speech models take 16000.
+        rate: u32,
+        start-ms: u64,
+        /// None: to the end. At most `data-bytes` (`limits`) of samples
+        /// come at once (4 bytes each): ask for a long file in parts.
+        duration-ms: option<u64>,
+    }
+
+    /// What the engine is, here.
+    get-capabilities: func() -> capabilities;
+    /// What a model of the app's storage takes and gives; loads it.
+    get-model-info: func(model: string) -> result<model-info, error>;
+    /// Runs a model on one tensor per input (matched by name) and gives one
+    /// per output, in the model's order: at most `data-bytes` together.
+    run: func(model: string, inputs: list<named-tensor>) -> result<list<named-tensor>, error>;
+    /// A picture as a model's input: a photo of any format (HEIC and RAW
+    /// included, turned as shown), a frame of a video. Needs ffmpeg on the
+    /// server (not `use.ffmpeg`).
+    image-tensor: func(source: source, options: image-options) -> result<image-input, error>;
+    /// Sound as a model's input: f32 `[samples]`, mono, from music, a
+    /// recording or a video. Needs ffmpeg on the server.
+    audio-tensor: func(source: source, options: audio-options) -> result<tensor, error>;
+}
+
+world app {
+    use types.{request, response, user};
+
+    import log;
+    import appdata;
+    import files;
+    import shares;
+    import settings;
+    import limits;
+    import links;
+    import tokens;
+    import http;
+    import storage;
+    import jobs;
+    import use-ffmpeg;
+    import use-onnx;
+
+    /// Handles a request to the app's routes. `user` is none for requests
+    /// without a session.
+    export handle: func(user: option<user>, request: request) -> response;
+}
+
+/// An app that does background jobs: the same as `app`, and `run-batch`.
+world app-with-jobs {
+    use types.{request, response, user};
+    use jobs.{job, outcome};
+
+    import log;
+    import appdata;
+    import files;
+    import shares;
+    import settings;
+    import limits;
+    import links;
+    import tokens;
+    import http;
+    import storage;
+    import jobs;
+    import use-ffmpeg;
+    import use-onnx;
+
+    export handle: func(user: option<user>, request: request) -> response;
+
+    /// Runs a batch of jobs of one kind and one user (the user the jobs were
+    /// added for), within the kind's limits. Returns an outcome for each job,
+    /// in order; missing ones are tried again. If the batch fails as a whole
+    /// (a panic, a limit), its jobs are tried again one by one.
+    export run-batch: func(user: user, jobs: list<job>) -> list<outcome>;
+}

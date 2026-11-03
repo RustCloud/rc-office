@@ -1,0 +1,63 @@
+id = "rc-office"
+version = "0.1.0"
+# The version of wit/app.wit: open_with, tokens, locks, request bodies and
+# addresses from settings need 0.2.14.
+api = "^0.2.14"
+# PutFile of a document larger than the plugin takes at once: the server
+# keeps the body on disk and the plugin saves it with write-request-body.
+large_bodies = true
+
+[name]
+en = "Office"
+ru = "Офис"
+
+# The plugin is a WOPI host over the user's files: Collabora Online (a
+# container of its own, `office_url`) opens and saves the one file the user
+# opened, with a token for it. Versions, quota, the activity log and the
+# trash stay the server's.
+[permissions]
+files = "opened"
+files_write = true
+# Discovery and capabilities of Collabora; the panel shows its editor.
+network = ["{office_url}"]
+frame = ["{office_url}"]
+
+[[server_settings]]
+key = "office_url"
+kind = "text"
+label.en = "Collabora Online address"
+label.ru = "Адрес Collabora Online"
+hint.en = "As browsers and this server reach it, e.g. https://office.example.com"
+hint.ru = "Как до него достают браузеры и этот сервер, например https://office.example.com"
+
+[[server_settings]]
+key = "wopi_base_url"
+kind = "text"
+label.en = "Cloud address for Collabora (if not the public one)"
+label.ru = "Адрес облака для Collabora (если не публичный)"
+hint.en = "Empty: the address of the panel. Collabora's aliasgroup1 must match it, e.g. http://rustcloud:8080"
+hint.ru = "Пусто — адрес панели. С ним должен совпадать aliasgroup1 Collabora, например http://rustcloud:8080"
+
+[[open_with]]
+mime = [
+  "application/vnd.oasis.opendocument.text",
+  "application/vnd.oasis.opendocument.spreadsheet",
+  "application/vnd.oasis.opendocument.presentation",
+  "application/vnd.oasis.opendocument.graphics",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/msword",
+  "application/vnd.ms-excel",
+  "application/vnd.ms-powerpoint",
+  "application/rtf",
+  "text/csv",
+]
+page = "/edit"
+write = true
+layout = "full"
+label = { en = "Edit in Office", ru = "Редактировать в Офисе" }
+
+[ui]
+icon = "file"
+entry = "/app/rc-office"

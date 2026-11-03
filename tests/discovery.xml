@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<wopi-discovery>
+  <net-zone name="external-http">
+    <app name="writer" favIconUrl="http://collabora.internal:9980/browser/0c4e5b1/images/x-office-document.svg">
+      <action default="true" ext="doc" name="edit" urlsrc="http://collabora.internal:9980/browser/0c4e5b1/cool.html?"/>
+      <action default="true" ext="docx" name="edit" urlsrc="http://collabora.internal:9980/browser/0c4e5b1/cool.html?"/>
+      <action default="true" ext="odt" name="edit" urlsrc="http://collabora.internal:9980/browser/0c4e5b1/cool.html?"/>
+      <action default="true" ext="rtf" name="edit" urlsrc="http://collabora.internal:9980/browser/0c4e5b1/cool.html?"/>
+      <action default="true" ext="pdf" name="view" urlsrc="http://collabora.internal:9980/browser/0c4e5b1/cool.html?"/>
+    </app>
+    <app name="calc" favIconUrl="http://collabora.internal:9980/browser/0c4e5b1/images/x-office-document.svg">
+      <action default="true" ext="xls" name="edit" urlsrc="http://collabora.internal:9980/browser/0c4e5b1/cool.html?"/>
+      <action default="true" ext="xlsx" name="edit" urlsrc="http://collabora.internal:9980/browser/0c4e5b1/cool.html?"/>
+      <action default="true" ext="ods" name="edit" urlsrc="http://collabora.internal:9980/browser/0c4e5b1/cool.html?"/>
+      <action default="true" ext="csv" name="edit" urlsrc="http://collabora.internal:9980/browser/0c4e5b1/cool.html?"/>
+    </app>
+    <app name="impress" favIconUrl="http://collabora.internal:9980/browser/0c4e5b1/images/x-office-document.svg">
+      <action default="true" ext="ppt" name="edit" urlsrc="http://collabora.internal:9980/browser/0c4e5b1/cool.html?"/>
+      <action default="true" ext="pptx" name="edit" urlsrc="http://collabora.internal:9980/browser/0c4e5b1/cool.html?"/>
+      <action default="true" ext="odp" name="edit" urlsrc="http://collabora.internal:9980/browser/0c4e5b1/cool.html?"/>
+    </app>
+    <app name="draw" favIconUrl="http://collabora.internal:9980/browser/0c4e5b1/images/x-office-document.svg">
+      <action default="true" ext="odg" name="edit" urlsrc="http://collabora.internal:9980/browser/0c4e5b1/cool.html?"/>
+      <action default="true" ext="vsdx" name="view" urlsrc="http://collabora.internal:9980/browser/0c4e5b1/cool.html?"/>
+    </app>
+    <app name="application/vnd.oasis.opendocument.text">
+      <action default="true" ext="" name="edit" urlsrc="http://collabora.internal:9980/browser/0c4e5b1/cool.html?"/>
+    </app>
+    <app name="application/vnd.oasis.opendocument.spreadsheet">
+      <action default="true" ext="" name="edit" urlsrc="http://collabora.internal:9980/browser/0c4e5b1/cool.html?"/>
+    </app>
+    <app name="Capabilities">
+      <action name="getinfo" ext="" urlsrc="http://collabora.internal:9980/hosting/capabilities"/>
+    </app>
+  </net-zone>
+  <proof-key exponent="AQAB" modulus="AAAA" oldexponent="AQAB" oldmodulus="AAAA" oldvalue="BgIA" value="BgIA"/>
+</wopi-discovery>
