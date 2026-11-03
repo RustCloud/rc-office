@@ -72,7 +72,9 @@ jobs:
         run: cargo test --locked
 
       - name: Pages
-        run: for file in ui/*.js e2e/*.mjs; do [ -e "$file" ] && node --check "$file"; done
+        run: |
+          shopt -s nullglob
+          for file in ui/*.js e2e/*.mjs; do node --check "$file"; done
 
       - name: Build
         run: |

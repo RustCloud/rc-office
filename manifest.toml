@@ -1,5 +1,5 @@
 id = "rc-office"
-version = "0.1.0"
+version = "0.1.1"
 # The version of wit/app.wit: open_with, tokens, locks, request bodies and
 # addresses from settings need 0.2.14.
 api = "^0.2.14"
