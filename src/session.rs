@@ -210,7 +210,7 @@ mod tests {
             format!(
                 // Through the panel's address; Collabora calls back the server's inner one.
                 "https://cloud.example.com/browser/0c4e5b1/cool.html?WOPISrc=http%3A%2F%2F172.19.0.3%3A8080\
-                 %2Fapp%2Frc-office%2Fwopi%2Ffiles%2F{FILE}&lang=ru&ui_theme=dark"
+                 %2Fapp%2Frc-office%2Fwopi%2Ffiles%2F{FILE}&closebutton=1&lang=ru&ui_theme=dark"
             )
         );
         assert_eq!(body["token"], format!("token-{FILE}-true-36000"));

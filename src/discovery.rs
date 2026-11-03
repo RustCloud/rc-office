@@ -169,8 +169,8 @@ impl Discovery {
 /// The editor's address for a document: `urlsrc` with its placeholders
 /// (`<ui=UI_LLCC&>`) dropped, on `public_origin` — the panel's: browsers
 /// reach Collabora only through the server's address (`[[proxy]]`), while
-/// discovery names its inner one — with `WOPISrc` and the user's language
-/// and theme.
+/// discovery names its inner one — with `WOPISrc`, the close button and the
+/// user's language and theme.
 pub fn editor_url(urlsrc: &str, public_origin: &str, wopi_src: &str, lang: &str, dark: bool) -> String {
     let mut url = String::with_capacity(urlsrc.len());
     let mut placeholder = false;
@@ -191,6 +191,8 @@ pub fn editor_url(urlsrc: &str, public_origin: &str, wopi_src: &str, lang: &str,
         url.push('&');
     }
     url.push_str(&format!("WOPISrc={}", web::encode(wopi_src)));
+    // Collabora's own "Close document" button: it sends UI_Close, and the page closes.
+    url.push_str("&closebutton=1");
     if !lang.is_empty() {
         url.push_str(&format!("&lang={}", web::encode(lang)));
     }
@@ -256,10 +258,10 @@ mod tests {
         assert_eq!(
             url,
             "https://office.example.com/browser/abc/cool.html?\
-             WOPISrc=https%3A%2F%2Fcloud.example.com%2Fapp%2Frc-office%2Fwopi%2Ffiles%2Ff1&lang=ru&ui_theme=dark"
+             WOPISrc=https%3A%2F%2Fcloud.example.com%2Fapp%2Frc-office%2Fwopi%2Ffiles%2Ff1&closebutton=1&lang=ru&ui_theme=dark"
         );
         let plain = editor_url("http://o:1/x?a=1", "http://o:1", "w", "", false);
-        assert_eq!(plain, "http://o:1/x?a=1&WOPISrc=w");
+        assert_eq!(plain, "http://o:1/x?a=1&WOPISrc=w&closebutton=1");
     }
 
     #[test]
