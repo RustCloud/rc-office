@@ -1,26 +1,6 @@
 // Texts of the pages, by the panel's language (context.locale).
 const TEXTS = {
   en: {
-    title: 'Office',
-    lead: 'Documents, spreadsheets and presentations of your files open in Collabora Online.',
-    how: 'In Files, open a document’s menu and choose “Edit in Office”, or double-click it.',
-    status: 'Connection to Collabora Online',
-    checking: 'Checking…',
-    address: 'Address (inside)',
-    wopiBase: 'Cloud address for Collabora',
-    wopiBaseSet: '(from the settings)',
-    wopiBaseAuto: '(found by the server)',
-    wopiBaseIsOffice:
-      'This is the address of Collabora itself, not of this cloud. Usually the setting stays empty: the server finds its address itself. Otherwise Collabora answers “Unauthorized WOPI host”.',
-    wopiBaseDefault: 'the address of the panel',
-    state: 'State',
-    reachable: 'answers',
-    unreachable: 'does not answer',
-    version: 'Version',
-    formats: 'Edits',
-    notConfigured:
-      'The Office is not set up yet: the administrator enters the address of Collabora Online in Administration → Plugins → Office.',
-    recheck: 'Check again',
     opening: (name) => `Opening ${name}…`,
     starting: 'Starting the editor…',
     retry: 'Try again',
@@ -45,26 +25,6 @@ const TEXTS = {
       `The document is being edited in the app “${app}”. It can be opened read-only until that app is done with it.`,
   },
   ru: {
-    title: 'Офис',
-    lead: 'Документы, таблицы и презентации из ваших файлов открываются в Collabora Online.',
-    how: 'В «Файлах» откройте меню документа и выберите «Редактировать в Офисе» — или дважды щёлкните по нему.',
-    status: 'Связь с Collabora Online',
-    checking: 'Проверяем…',
-    address: 'Адрес (внутренний)',
-    wopiBase: 'Адрес облака для Collabora',
-    wopiBaseSet: '(из настроек)',
-    wopiBaseAuto: '(определил сервер)',
-    wopiBaseIsOffice:
-      'Это адрес самой Collabora, а не облака. Обычно эта настройка пустая: сервер определяет свой адрес сам. Иначе Collabora ответит «Unauthorized WOPI host».',
-    wopiBaseDefault: 'адрес панели',
-    state: 'Состояние',
-    reachable: 'отвечает',
-    unreachable: 'не отвечает',
-    version: 'Версия',
-    formats: 'Редактирует',
-    notConfigured:
-      'Офис ещё не настроен: администратор указывает адрес Collabora Online в «Администрирование → Плагины → Офис».',
-    recheck: 'Проверить ещё раз',
     opening: (name) => `Открываем ${name}…`,
     starting: 'Запускаем редактор…',
     retry: 'Повторить',

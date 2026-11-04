@@ -1,5 +1,5 @@
-//! The page's own routes: `/session` opens a document in Collabora, `/status`
-//! tells how the plugin gets on with it.
+//! The plugin's own routes: `/session` opens a document in Collabora, `/status`
+//! tells the administrator how the plugin gets on with it.
 
 use serde_json::json;
 
@@ -160,41 +160,124 @@ fn wopi_base(backend: &dyn Backend, settings: &Settings, origin: &str) -> String
         .unwrap_or_else(|| origin.to_owned())
 }
 
-/// `GET /status`: whether Collabora is set and answers, its version and what it edits.
+/// One line of the report for the administrator's plugin dialog (`status`
+/// in the manifest): a level and the text by language.
+fn line(level: &str, en: String, ru: String) -> serde_json::Value {
+    json!({ "level": level, "text": { "en": en, "ru": ru } })
+}
+
+/// `GET /status`: the report the plugin dialog (Administration → Plugins →
+/// Office → Status) shows: whether Collabora is set and answers, its version,
+/// the addresses, the theme and what it edits. A JSON list of lines.
 pub fn status(backend: &dyn Backend) -> Reply {
+    web::json(200, serde_json::Value::Array(report(backend)))
+}
+
+fn report(backend: &dyn Backend) -> Vec<serde_json::Value> {
     let settings = Settings::of(backend);
     let Some(office_url) = settings.office_url.clone() else {
-        return web::json(200, json!({ "configured": false }));
+        return vec![line(
+            "error",
+            "The address of Collabora Online is not set (Settings tab).".into(),
+            "Не задан адрес Collabora Online (вкладка «Настройки»).".into(),
+        )];
     };
-    let mut status = json!({
-        "configured": true,
-        "office_url": office_url,
-        "wopi_base_url": settings.wopi_base_url,
-    });
-    // A common slip: the address of Collabora itself instead of the cloud's.
-    let office_origin = web::origin(&office_url);
-    if settings.wopi_base_url.as_deref().and_then(web::origin).is_some_and(|base| Some(base) == office_origin) {
-        status["wopi_base_is_office"] = json!(true);
-    }
-    match discovery::get(backend, &office_url, true) {
-        Ok(discovery) => {
-            status["reachable"] = json!(true);
-            status["editable"] = json!(Discovery::editable(&discovery));
+    let mut lines = Vec::new();
+    let discovery = discovery::get(backend, &office_url, true);
+    match &discovery {
+        Ok(_) => {
+            let product = backend
+                .fetch(&format!("{office_url}/hosting/capabilities"))
+                .ok()
+                .and_then(|answer| serde_json::from_slice::<serde_json::Value>(&answer.body).ok())
+                .map(|caps| {
+                    let name = caps["productName"].as_str().unwrap_or("Collabora Online").to_owned();
+                    match caps["productVersion"].as_str() {
+                        Some(version) => format!("{name} {version}"),
+                        None => name,
+                    }
+                })
+                .unwrap_or_else(|| "Collabora Online".into());
+            lines.push(line(
+                "ok",
+                format!("{product} answers at {office_url}"),
+                format!("{product} отвечает по адресу {office_url}"),
+            ));
         }
-        Err(err) => {
-            status["reachable"] = json!(false);
-            status["error"] = json!(err.to_string());
-        }
+        Err(err) => lines.push(line(
+            "error",
+            format!("Collabora Online does not answer at {office_url}: {err}"),
+            format!("Collabora Online не отвечает по адресу {office_url}: {err}"),
+        )),
     }
+
     // After discovery: the server learns its address on a connection to Collabora.
-    status["self_url"] = json!(web::base_url(backend.self_url().as_deref()));
-    if let Ok(answer) = backend.fetch(&format!("{office_url}/hosting/capabilities")) {
-        if let Ok(capabilities) = serde_json::from_slice::<serde_json::Value>(&answer.body) {
-            status["product"] = capabilities["productName"].clone();
-            status["version"] = capabilities["productVersion"].clone();
+    let self_url = web::base_url(backend.self_url().as_deref());
+    match (&settings.wopi_base_url, &self_url) {
+        (Some(base), _) => lines.push(line(
+            "info",
+            format!("Collabora calls the cloud at {base} (from the settings)"),
+            format!("Collabora обращается к облаку по адресу {base} (из настроек)"),
+        )),
+        (None, Some(base)) => lines.push(line(
+            "info",
+            format!("Collabora calls the cloud at {base} (found by the server)"),
+            format!("Collabora обращается к облаку по адресу {base} (определил сервер)"),
+        )),
+        (None, None) => lines.push(line(
+            "warning",
+            "The server could not tell its address for Collabora yet: the editor will use the panel's address.".into(),
+            "Сервер ещё не определил свой адрес для Collabora: редактор возьмёт адрес панели.".into(),
+        )),
+    }
+    // A common slip: the address of Collabora itself instead of the cloud's.
+    if settings
+        .wopi_base_url
+        .as_deref()
+        .and_then(web::origin)
+        .is_some_and(|base| Some(base) == web::origin(&office_url))
+    {
+        lines.push(line(
+            "warning",
+            "“Address of THIS cloud” is the address of Collabora itself. Usually it stays empty; otherwise Collabora answers “Unauthorized WOPI host”.".into(),
+            "«Адрес ЭТОГО облака» — это адрес самой Collabora. Обычно настройка пустая; иначе Collabora ответит «Unauthorized WOPI host».".into(),
+        ));
+    }
+
+    if let Ok(discovery) = &discovery {
+        if let Some(theme) = &settings.theme {
+            if theme_found(backend, &office_url, discovery, theme) {
+                lines.push(line(
+                    "ok",
+                    format!("Theme “{theme}” is in Collabora"),
+                    format!("Тема «{theme}» есть в Collabora"),
+                ));
+            } else {
+                lines.push(line(
+                    "warning",
+                    format!("Collabora has no theme “{theme}”: the editor looks standard. Its folder goes to /usr/share/coolwsd/browser/dist/{theme}"),
+                    format!("В Collabora нет темы «{theme}»: редактор будет стандартным. Её папка — /usr/share/coolwsd/browser/dist/{theme}"),
+                ));
+            }
+        }
+        let editable = Discovery::editable(discovery).join(", ");
+        if !editable.is_empty() {
+            lines.push(line("info", format!("Edits: {editable}"), format!("Редактирует: {editable}")));
         }
     }
-    web::json(200, status)
+    lines
+}
+
+/// Whether Collabora serves the theme's `branding.css` next to its editor
+/// page (`/browser/<hash>/<theme>/branding.css`), as it does when the folder
+/// `browser/dist/<theme>` exists.
+fn theme_found(backend: &dyn Backend, office_url: &str, discovery: &Discovery, theme: &str) -> bool {
+    let Some(action) = discovery.actions.first() else { return false };
+    let page = discovery::editor_url(&action.urlsrc, office_url, "", "");
+    let Some(dir) = page.split('?').next().and_then(|page| page.rsplit_once('/')).map(|(dir, _)| dir) else {
+        return false;
+    };
+    backend.fetch(&format!("{dir}/{theme}/branding.css")).is_ok_and(|answer| answer.status == 200)
 }
 
 fn office_error(err: &discovery::Error) -> Reply {
@@ -283,23 +366,42 @@ mod tests {
         assert!(body["url"].as_str().unwrap().contains("WOPISrc=https%3A%2F%2Fcloud.example.com%2Fapp%2Frc-office"));
     }
 
+    fn report_of(fake: &Fake) -> Vec<serde_json::Value> {
+        serde_json::from_slice(&status(fake).body).unwrap()
+    }
+
+    fn has(lines: &[serde_json::Value], level: &str, en: &str) -> bool {
+        lines.iter().any(|line| line["level"] == level && line["text"]["en"].as_str().unwrap().contains(en))
+    }
+
     #[test]
     fn status_tells_self_url() {
-        let fake = fake();
-        let body: serde_json::Value = serde_json::from_slice(&status(&fake).body).unwrap();
-        assert_eq!(body["self_url"], "http://172.19.0.3:8080");
-        assert_eq!(body["reachable"], true);
+        let lines = report_of(&fake());
+        assert!(has(&lines, "info", "at http://172.19.0.3:8080 (found by the server)"), "{lines:?}");
+        assert!(lines.iter().all(|line| line["text"]["ru"].is_string()));
+        let lines = report_of(&Fake { self_url: None, ..fake() });
+        assert!(has(&lines, "warning", "panel's address"), "{lines:?}");
     }
 
     #[test]
     fn warns_when_wopi_base_is_collabora() {
         let mut fake = fake();
         fake.settings = json!({ "office_url": "http://office.test:9980/", "wopi_base_url": "http://OFFICE.test:9980" });
-        let body: serde_json::Value = serde_json::from_slice(&status(&fake).body).unwrap();
-        assert_eq!(body["wopi_base_is_office"], true);
+        assert!(has(&report_of(&fake), "warning", "Unauthorized WOPI host"));
         fake.settings = json!({ "office_url": "http://office.test:9980/", "wopi_base_url": "http://rustcloud:8080" });
-        let body: serde_json::Value = serde_json::from_slice(&status(&fake).body).unwrap();
-        assert!(body.get("wopi_base_is_office").is_none());
+        let lines = report_of(&fake);
+        assert!(!has(&lines, "warning", "Unauthorized WOPI host"));
+        assert!(has(&lines, "info", "at http://rustcloud:8080 (from the settings)"));
+    }
+
+    #[test]
+    fn checks_the_theme() {
+        let mut fake = fake();
+        fake.settings = json!({ "office_url": "http://office.test:9980", "theme": "rustcloud" });
+        assert!(has(&report_of(&fake), "warning", "no theme “rustcloud”"));
+        let css = "http://office.test:9980/browser/0c4e5b1/rustcloud/branding.css";
+        fake.web.borrow_mut().insert(css.into(), Ok(Fetched { status: 200, body: b"a{}".to_vec() }));
+        assert!(has(&report_of(&fake), "ok", "Theme “rustcloud”"));
     }
 
     #[test]
@@ -366,19 +468,16 @@ mod tests {
                     .to_vec(),
             }),
         );
-        let body: serde_json::Value = serde_json::from_slice(&status(&fake).body).unwrap();
-        assert_eq!(body["configured"], true);
-        assert_eq!(body["reachable"], true);
-        assert_eq!(body["version"], "26.04.5.2");
-        assert!(body["editable"].as_array().unwrap().contains(&json!("docx")));
+        let lines = report_of(&fake);
+        assert!(has(&lines, "ok", "Collabora Online Development Edition 26.04.5.2 answers"), "{lines:?}");
+        assert!(has(&lines, "info", "docx"));
 
-        let down = Fake::default();
-        let body: serde_json::Value = serde_json::from_slice(&status(&down).body).unwrap();
-        assert_eq!(body["reachable"], false);
-        assert!(body["error"].as_str().unwrap().contains("does not answer"));
+        let lines = report_of(&Fake::default());
+        assert!(has(&lines, "error", "does not answer"), "{lines:?}");
 
         let unset = Fake { settings: json!({ "office_url": "" }), ..Fake::default() };
-        let body: serde_json::Value = serde_json::from_slice(&status(&unset).body).unwrap();
-        assert_eq!(body["configured"], false);
+        let lines = report_of(&unset);
+        assert_eq!(lines.len(), 1);
+        assert!(has(&lines, "error", "not set"));
     }
 }

@@ -1,11 +1,15 @@
 id = "rc-office"
-version = "0.2.2"
+version = "0.2.3"
 # The version of wit/app.wit: open_with, tokens, locks, request bodies and
-# addresses from settings need 0.2.14, [[proxy]] and proxy.self-url 0.2.15.
-api = "^0.2.15"
+# addresses from settings need 0.2.14, [[proxy]] and proxy.self-url 0.2.15,
+# [[new_files]] and status 0.2.16.
+api = "^0.2.16"
 # PutFile of a document larger than the plugin takes at once: the server
 # keeps the body on disk and the plugin saves it with write-request-body.
 large_bodies = true
+# The report on the Status tab of the plugin's dialog (Administration →
+# Plugins → Office): whether Collabora answers, the addresses, the theme.
+status = "/status"
 
 [name]
 en = "Office"
@@ -80,6 +84,17 @@ write = true
 layout = "full"
 label = { en = "Edit in Office", ru = "Редактировать в Офисе" }
 
-[ui]
-icon = "file"
-entry = "/app/rc-office"
+# The files panel's "New" menu. The file starts empty: Collabora (LibreOffice
+# 7.0 and later) opens an empty file as a new document of its extension and
+# saves it in that format.
+[[new_files]]
+extension = "docx"
+label = { en = "Document", ru = "Документ" }
+
+[[new_files]]
+extension = "xlsx"
+label = { en = "Spreadsheet", ru = "Таблица" }
+
+[[new_files]]
+extension = "pptx"
+label = { en = "Presentation", ru = "Презентация" }

@@ -3,7 +3,7 @@
 // The server instantiates the app for each request to its routes
 // (`/app/<id>/...`) and calls `handle`. The app reaches the server only
 // through the interfaces it imports here; everything else is denied.
-package rustcloud:app@0.2.15;
+package rustcloud:app@0.2.16;
 
 interface types {
     /// An HTTP request to the app's routes.

@@ -32,11 +32,9 @@ pub fn route(backend: &dyn Backend, user: Option<&backend::User>, request: &back
     let html = "text/html; charset=utf-8";
     let js = "text/javascript; charset=utf-8";
     match (request.method.as_str(), path) {
-        ("GET", "/") => web::asset(html, include_bytes!("../ui/index.html")),
         ("GET", "/edit") => web::asset(html, include_bytes!("../ui/edit.html")),
         ("GET", "/app.css") => web::asset("text/css; charset=utf-8", include_bytes!("../ui/app.css")),
         ("GET", "/i18n.js") => web::asset(js, include_bytes!("../ui/i18n.js")),
-        ("GET", "/index.js") => web::asset(js, include_bytes!("../ui/index.js")),
         ("GET", "/edit.js") => web::asset(js, include_bytes!("../ui/edit.js")),
         ("GET", "/session" | "/status") if user.is_none() || backend.token().is_some() => {
             web::error(401, "unauthorized", "Not logged in")
@@ -80,7 +78,7 @@ mod tests {
     #[test]
     fn serves_the_page() {
         let fake = Fake { token: None, ..Fake::default() };
-        for path in ["/", "/edit", "/app.css", "/i18n.js", "/index.js", "/edit.js"] {
+        for path in ["/edit", "/app.css", "/i18n.js", "/edit.js"] {
             assert_eq!(get(&fake, true, path).status, 200, "{path}");
         }
         assert_eq!(get(&fake, true, "/nothing").status, 404);
