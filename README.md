@@ -123,7 +123,9 @@ cp target/wasm32-wasip2/release/rc_office.wasm dist/rc-office/app.wasm
 
 [.github/workflows/build.yml](.github/workflows/build.yml) делает то же на каждый пуш (проверка версий,
 `fmt`, `clippy`, тесты, JS страниц) и выкладывает артефакт `rc-office-<версия>` — его zip ставится как
-есть. Тег `v<версия>` (версия из `manifest.toml`) публикует релиз с `rc-office.zip`. Версия плагина
-растёт с каждым пушем — в `manifest.toml` и `Cargo.toml` одинаково.
+есть. Пуш в `main` с новой версией в `manifest.toml` публикует релиз `v<версия>` (тег ставится на этот
+коммит) с `rc-office.zip` и его SHA-256; следующие пуши той же версии релиз не трогают. Тег `v<версия>`,
+поставленный вручную, тоже публикует или обновляет релиз. Версия плагина растёт с каждым пушем — в
+`manifest.toml` и `Cargo.toml` одинаково.
 
 `wit/app.wit` — копия `crates/plugin-api/wit/app.wit` ядра версии из `manifest.toml` (`api`).
