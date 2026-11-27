@@ -1,9 +1,9 @@
 id = "rc-office"
-version = "0.2.3"
+version = "0.2.4"
 # The version of wit/app.wit: open_with, tokens, locks, request bodies and
 # addresses from settings need 0.2.14, [[proxy]] and proxy.self-url 0.2.15,
-# [[new_files]] and status 0.2.16.
-api = "^0.2.16"
+# [[new_files]] and status 0.2.16, defaults of server settings 0.2.20.
+api = "^0.2.20"
 # PutFile of a document larger than the plugin takes at once: the server
 # keeps the body on disk and the plugin saves it with write-request-body.
 large_bodies = true
@@ -37,16 +37,22 @@ key = "office_url"
 kind = "text"
 label.en = "Collabora Online address (inside)"
 label.ru = "Адрес Collabora Online (внутренний)"
-hint.en = "As this server reaches it, e.g. http://collabora:9980. Browsers reach Collabora through the cloud's address"
-hint.ru = "Как до неё достаёт сервер облака, например http://collabora:9980. Браузеры ходят к Collabora через адрес облака"
+hint.en = "As this server reaches it: the name of Collabora's service in compose.yml and its port. Browsers reach Collabora through the cloud's address"
+hint.ru = "Как до неё достаёт сервер облака: имя сервиса Collabora в compose.yml и её порт. Браузеры ходят к Collabora через адрес облака"
+# The compose.yml of the README: services "collabora" and "rustcloud".
+default = "http://collabora:9980"
 
 [[server_settings]]
 key = "wopi_base_url"
 kind = "text"
-label.en = "Address of THIS cloud for Collabora (usually empty)"
-label.ru = "Адрес ЭТОГО облака для Collabora (обычно пусто)"
-hint.en = "Empty: the server finds it itself. Only if Collabora reaches the cloud at another address, e.g. http://rustcloud:8080. Not the address of Collabora!"
-hint.ru = "Пусто — сервер определяет сам. Только если Collabora достаёт облако по другому адресу, например http://rustcloud:8080. Не адрес Collabora!"
+label.en = "Address of THIS cloud for Collabora"
+label.ru = "Адрес ЭТОГО облака для Collabora"
+hint.en = "As Collabora reaches the cloud inside compose.yml: the name of the cloud's service and its port. Collabora must allow it: aliasgroup1 with the same address. Not the address of Collabora!"
+hint.ru = "Как Collabora достаёт облако внутри compose.yml: имя сервиса облака и его порт. Collabora должна его разрешать: aliasgroup1 с тем же адресом. Не адрес Collabora!"
+# A name, not the container's IP the server finds itself (proxy.self-url):
+# that IP changes when the cloud's container is made again (an update), and
+# Collabora, which trusts one host, then answers "Unauthorized WOPI host".
+default = "http://rustcloud:8080"
 
 [[server_settings]]
 key = "compact_ui"

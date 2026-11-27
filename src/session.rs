@@ -216,8 +216,8 @@ fn report(backend: &dyn Backend) -> Vec<serde_json::Value> {
     match (&settings.wopi_base_url, &self_url) {
         (Some(base), _) => lines.push(line(
             "info",
-            format!("Collabora calls the cloud at {base} (from the settings)"),
-            format!("Collabora обращается к облаку по адресу {base} (из настроек)"),
+            format!("Collabora calls the cloud at {base} (from the settings): Collabora must allow it, aliasgroup1={base}"),
+            format!("Collabora обращается к облаку по адресу {base} (из настроек): Collabora должна его разрешать, aliasgroup1={base}"),
         )),
         (None, Some(base)) => lines.push(line(
             "info",
@@ -239,8 +239,8 @@ fn report(backend: &dyn Backend) -> Vec<serde_json::Value> {
     {
         lines.push(line(
             "warning",
-            "“Address of THIS cloud” is the address of Collabora itself. Usually it stays empty; otherwise Collabora answers “Unauthorized WOPI host”.".into(),
-            "«Адрес ЭТОГО облака» — это адрес самой Collabora. Обычно настройка пустая; иначе Collabora ответит «Unauthorized WOPI host».".into(),
+            "“Address of THIS cloud” is the address of Collabora itself: Collabora answers “Unauthorized WOPI host”. Give the cloud's address, e.g. http://rustcloud:8080.".into(),
+            "«Адрес ЭТОГО облака» — это адрес самой Collabora: Collabora ответит «Unauthorized WOPI host». Укажите адрес облака, например http://rustcloud:8080.".into(),
         ));
     }
 
